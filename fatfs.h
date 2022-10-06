@@ -11,33 +11,39 @@
 #include <stdio.h>
 
 
-
-#define MAXNAME 64
 #define FATIDX 0
-#define ROOTIDX 8
-#define DATAIDX 10
-#define BLOCKSIZE 512
-#define FATSIZE  BLOCKSIZE *sizeof(uint16_t)*2
-#define DATASIZE FATSIZE*BLOCKSIZE
-#define DIRTABLESIZE 32
+#define ENTRIESIDX FATSIZE
+#define DATAIDX  FATSIZE+DIRTABLESIZE
+#define BLOCKSIZE 256
+#define FATSIZE  BLOCKSNUMBER*sizeof(myFAT)
+#define DATASIZE BLOCKSNUMBER*BLOCKSIZE
+#define BLOCKSNUMBER  256
+#define DIRTABLESIZE 32 * sizeof(myEntry)
+#define UNUSED 0x0000
+#define EOC    0xFFFF
+
+typedef  uint16_t myFAT;
 
 
-struct myFAT{
-	uint16_t next;
-}
 
-struct myEntry{
+typedef struct myEntry{
 	char* name;
+	uint8_t numfiles;
 	uint16_t modified_time;
 	uint16_t create_time;
-	uint16_t start_blocks;
+	uint16_t firstBlockIdx;
 	uint32_t size;
-}
+}myEntry;
 
-struct myFilehandle {
+typedef struct myFileHandle {
 	char* name;
 	uint32_t position;
-}
+	myEntry* dir;
+	uint32_t start;
+	uint32_t size;
+}myFileHandle;
+
+
 
 
 
@@ -49,7 +55,7 @@ myFileHandle* create_file();
 void erase_file();
 uint32_t my_write();
 uint32_t my_read();
-void my_seek;
+void my_seek();
 void create_dir();
 void erase_dir();
 void change_dir();
