@@ -11,9 +11,7 @@
 #include <stdio.h>
 
 
-#define FAT_IDX 0
-#define ROOT_IDX 8
-#define DATA_IDX  11
+
 #define DIR_ENTRY_COUNT 32
 #define BYTES_PER_SECTOR 512
 #define FATSIZE  8
@@ -23,6 +21,7 @@
 #define UNUSED 0x0000
 #define EOC    0xFFFF
 #define MAXNAME 11
+
 
 
 typedef  uint16_t myFAT;
@@ -43,6 +42,7 @@ typedef struct {
 
 typedef struct {
 	uint32_t position;
+	uint32_t dir_idx;
 }myFileHandle;
 
 
@@ -53,19 +53,18 @@ void initFS(char* diskname);
 void formatFS();
 void initRoot();
 void initEntry(int i);
-int findFreeBlock();
 int findFreeFAT();
 int findFreeEntry();
 myFileHandle create_file(char* filename);
 int findFile(const char* filename);
 void erase_file(char* filename);
-uint32_t my_write();
-uint32_t my_read();
-void my_seek();
-void create_dir();
-void erase_dir();
-void change_dir();
-void list_dir();
+size_t my_write(myFileHandle *fd,const char* buf,size_t count);
+size_t my_read(myFileHandle *fd, char* buf,size_t count);
+off_t my_seek(myFileHandle *fd, off_t offset, int whence);
+void create_dir(char* dirname);
+void erase_dir(char* dirname);
+void change_dir(char* dirname);
+void list_dir(char* dirname);
 
 
 	

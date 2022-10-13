@@ -68,22 +68,19 @@ void initEntry(int i){
 void initRoot(){
 	myEntry rootEntry;
 	char* name;
-	myFAT fatEntry;
 	currentDir =0;
 	
 	name= "root";
 	memcpy(rootEntry.name,name,11);
+	rootEntry.parent_idx=-1;
 	rootEntry.create_time = time(0);
 	rootEntry.modified_time = time(0);
 	rootEntry.start_block=0;
-	rootEntry.size = 11;
+	rootEntry.size = 0;
 	rootEntry.isDir = 1;
 	
-	fatEntry=EOC;
-	
-	memcpy(&fat[0],&fatEntry,sizeof(myFAT));
+	fat[0]=EOC;
 	memcpy(rootDir,&rootEntry,sizeof(myEntry));
-	memcpy(data,&name,11);
 	return;
 }
 
@@ -111,7 +108,6 @@ int findFreeEntry(){
 
 myFileHandle create_file(char *filename){
 	myEntry dirEntry;
-	myFAT fatEntry;
 	int dirFree,blockFree;
 	myFileHandle fd;
 	fd.position=-1;
@@ -128,27 +124,23 @@ myFileHandle create_file(char *filename){
 		printf("create_file:no dir entries available\n");
 		return fd;
 	}
-	
 	//create a new dir entry
 	
-	memcpy(dirEntry.name,&filename,11);
+	memcpy(dirEntry.name,&filename,MAXNAME);
 	dirEntry.parent_idx=currentDir;
 	dirEntry.create_time = time(0);
 	dirEntry.modified_time = time(0);
 	dirEntry.start_block=blockFree;
-	dirEntry.size = 11;
+	dirEntry.size = 0;
 	dirEntry.isDir = 0;
 	
 	memcpy(&rootDir[dirFree],&dirEntry,sizeof(myEntry));
 	
 	//fat entry
-	fatEntry = EOC;
-	memcpy(&fat[blockFree],&fatEntry,sizeof(myFAT));
+	fat[blockFree]=EOC;
 	
-	
-	memcpy(&data[blockFree*BYTES_PER_SECTOR],&filename,11);
-	
-	fd.position=blockFree*BYTES_PER_SECTOR;
+	fd.position=blockFree*BYTES_PER_SECTOR-1;
+	fd.dir_idx=dirFree;
 	return fd;
 }
 
@@ -171,13 +163,364 @@ void erase_file(char* filename){
 	myFAT next =fat[start];
 	while(0){
 		memset(&data[start*BYTES_PER_SECTOR],0,BYTES_PER_SECTOR);
+		fat[start]=UNUSED;
 		if(next == EOC)
 			break;
-		fat[start]=UNUSED;
+		
 		start=next;
 		next=fat[next];
 	}
 	
 	initEntry(index);
 	return;	
+}
+
+
+size_t my_write(myFileHandle *fd,const char* buf,size_t count){
+	int i=0,blockFree;
+	myEntry dir=rootDir[fd->dir_idx];
+	uint32_t pos=fd->position;
+	myFAT next=fat[dir.start_block];
+	printf("NEXT = %d\npos=%d\n",next,pos);
+	while(i < count){
+		
+			
+			if((pos+1)%BYTES_PER_SECTOR < BYTES_PER_SECTOR-1){ 
+				data[pos]=buf[i];
+				pos++;
+				i++;
+			}
+			
+			
+			else{
+				if(next == EOC){
+					if((blockFree=findfreeFAT()) == -1){
+						printf("create_file:No more blocks available\n");
+						rootDir[fd->dir_idx].size += i-1;
+						return i-1;	
+					}
+					printf("BLOCK FREE = %d\n",blockFree);
+					fat[(pos+1)/BYTES_PER_SECTOR]=blockFree;
+					fat[blockFree]=EOC;
+					pos=blockFree * BYTES_PER_SECTOR-1;
+					
+				}else{
+					pos=next*BYTES_PER_SECTOR-1;
+					next=fat[next];
+					
+				}
+				
+				
+			}
+							
+	}
+	
+	
+	rootDir[fd->dir_idx].size += count;
+	rootDir[fd->dir_idx].modified_time=time(0);
+	return count;
+	
+
+}
+
+size_t my_read(myFileHandle *fd, char* buf,size_t count){
+		int i=0;
+		myEntry dir=rootDir[fd->dir_idx];
+		uint32_t pos=fd->position;
+		myFAT next=fat[dir.start_block];
+		while( i < count){
+			if(pos%BYTES_PER_SECTOR <= BYTES_PER_SECTOR){ 
+				buf[i]=data[pos];
+				pos++;
+				i++;
+			}
+			
+			
+			else{
+				if(next == EOC)
+					return i-1;
+					
+				else{
+					pos=next*BYTES_PER_SECTOR;
+					next=fat[next];
+					
+				}
+				
+				
+			}
+			
+			
+			
+			
+		}
+		
+		
+		return count;
+		
+}
+
+off_t my_seek(myFileHandle *fd, off_t offset, int whence){
+	myEntry dir=rootDir[fd->dir_idx];
+	uint32_t pos=fd->position;
+	myFAT next=fat[dir.start_block];
+	printf("NEXT= %d\n",next);
+	off_t os=offset;
+	switch(whence){
+		case SEEK_SET:
+			
+			if(offset < 0)
+					return 0;
+			else{
+				pos=dir.start_block*BYTES_PER_SECTOR-1;//511
+	
+				while(1)
+				{
+				
+					if(os/*824*/  <= BYTES_PER_SECTOR)//512
+					{
+						
+						fd->position =pos+os;
+						return offset;
+					}
+				
+					else if(next == EOC)
+					{
+						printf("CIAO ,os=%ld\n",os);
+						fd->position = pos+BYTES_PER_SECTOR;
+						os -= BYTES_PER_SECTOR;
+						return offset-os;
+					}
+				
+					else
+					{
+						os -= BYTES_PER_SECTOR;
+						pos=next*BYTES_PER_SECTOR-1;
+						next=fat[next];
+					 
+					}
+					
+				}
+			}
+			break;
+			
+		case SEEK_CUR:
+			
+			
+			if(offset <= 0){
+				int block_index= (pos+1)/BYTES_PER_SECTOR;
+				printf("BLOCK_INDEX = %d\n",block_index);
+				int count=1;
+				int num_blocks = block_index - (pos+offset)/BYTES_PER_SECTOR;
+				printf("NUM_BLOCKS = %d\n",num_blocks);
+				if(num_blocks == 0){
+					fd->position -= offset;
+					return offset;
+				}
+				while(next != block_index && next != EOC){
+					next=fat[next];
+					count++;
+				}
+				//count=1
+				if(num_blocks > count){
+					
+					fd->position = dir.start_block*BYTES_PER_SECTOR;
+					
+					return pos%BYTES_PER_SECTOR +count*BYTES_PER_SECTOR;
+				}
+				else if(count-num_blocks==0)
+				{
+					fd->position =dir.start_block*BYTES_PER_SECTOR + BYTES_PER_SECTOR-(-offset-(pos%BYTES_PER_SECTOR)-(num_blocks-1)*BYTES_PER_SECTOR);
+					return offset;
+				}
+				else
+				{
+					next=fat[dir.start_block];
+					num_blocks++;
+					while(count-num_blocks >0){
+						next=fat[next];
+						count--;
+					}
+					fd->position = next*BYTES_PER_SECTOR + BYTES_PER_SECTOR - (offset - (pos%BYTES_PER_SECTOR)-(num_blocks-2)*BYTES_PER_SECTOR);
+					return offset;
+				}
+				
+				
+					
+			}
+			else{
+				while(1)
+			{
+				
+				if(pos%BYTES_PER_SECTOR + os  <= BYTES_PER_SECTOR)
+				{
+					fd->position =pos+os;
+					return offset;
+				}
+				
+				else if(next == EOC)
+				{
+					fd->position = pos+BYTES_PER_SECTOR;
+					os -= BYTES_PER_SECTOR -pos%BYTES_PER_SECTOR;
+					return offset-os;
+				}
+				
+				else
+				{
+					os -= BYTES_PER_SECTOR-pos%BYTES_PER_SECTOR;
+					pos=next*BYTES_PER_SECTOR-1;
+					next=fat[next];
+					 
+				}
+					
+			}
+			
+					
+			}
+				
+				
+			
+		
+		case SEEK_END:
+			if(offset > 0)
+				return 0;
+			while(next != EOC){
+				pos=next*BYTES_PER_SECTOR-1;
+				next = fat[next];
+			}
+			pos += dir.size%BYTES_PER_SECTOR-1;
+			next=fat[dir.start_block];
+			int block_index= (pos+1)/BYTES_PER_SECTOR;//2
+				printf("BLOCK_INDEX = %d\n",block_index);
+				int count=1;
+				int num_blocks = block_index - (pos+offset)/BYTES_PER_SECTOR;//1
+				printf("NUM_BLOCKS = %d\n",num_blocks);
+				if(num_blocks == 0){
+					fd->position -= offset;
+					return offset;
+				}
+				while(next != block_index && next != EOC){
+					next=fat[next];
+					count++;
+				}
+				//count=1
+				if(num_blocks > count){
+					
+					fd->position = dir.start_block*BYTES_PER_SECTOR;
+					
+					return pos%BYTES_PER_SECTOR +count*BYTES_PER_SECTOR;
+				}
+				else if(count-num_blocks==0)
+				{
+					fd->position =dir.start_block*BYTES_PER_SECTOR + BYTES_PER_SECTOR-(-offset-(pos%BYTES_PER_SECTOR)-(num_blocks-1)*BYTES_PER_SECTOR);
+					return offset;
+				}
+				else
+				{
+					next=fat[dir.start_block];
+					num_blocks++;
+					while(count-num_blocks >0){
+						next=fat[next];
+						count--;
+					}
+					fd->position = next*BYTES_PER_SECTOR + BYTES_PER_SECTOR - (offset - (pos%BYTES_PER_SECTOR)-(num_blocks-2)*BYTES_PER_SECTOR);
+					return offset;
+				}
+				
+		
+		default:
+			return -1;
+		
+		
+	}
+	return -1;
+	
+}
+
+
+void create_dir(char* dirname){
+	myEntry dirEntry;
+	int dirFree,blockFree;
+	
+	
+	if(findFile(dirname) != -1){
+		printf("create_file:Directory already exists\n");
+		return ;
+	}
+	if((blockFree=findfreeFAT()) == -1){
+		printf("create_file:No more blocks available\n");
+		return ;	
+	}
+	if((dirFree=findFreeEntry()) == -1){
+		printf("create_file:no dir entries available\n");
+		return ;
+	}
+	//create a new dir entry
+	
+	memcpy(dirEntry.name,&dirname,MAXNAME);
+	dirEntry.parent_idx = currentDir;
+	dirEntry.create_time = time(0);
+	dirEntry.modified_time = time(0);
+	dirEntry.start_block=blockFree;
+	dirEntry.size = 0;
+	dirEntry.isDir = 1;
+	
+	memcpy(&rootDir[dirFree],&dirEntry,sizeof(myEntry));
+	
+	//fat entry
+	fat[blockFree]=EOC;
+	
+	return;
+	
+}
+
+void erase_dir(char* dirname){
+	int index;
+	if((index = findFile(dirname)) == -1){
+			printf("erase_file: Directory doesnt exists");
+			return;
+	}
+	
+	int start = rootDir[index].start_block;
+	fat[start]=UNUSED;
+	initEntry(index);
+	return;		
+}
+
+
+void change_dir(char* dirname){
+	int index;
+	if((index = findFile(dirname)) == -1){
+			printf("erase_file: Directory doesnt exists");
+			return;
+	}
+	if(rootDir[index].parent_idx == currentDir)
+		currentDir=rootDir[index].start_block;
+	else{
+			printf("Can't find directory");
+			return;
+	}
+	return;	
+}
+
+
+
+void list_dir(char* dirname){
+	int index;
+	if((index=findFile(dirname)) == -1){
+			printf("list_dir: Directory doesnt exists");
+			return;
+	}
+	for(int i=0;i < DIR_ENTRY_COUNT;++i){
+		if(rootDir[i].parent_idx == index){
+				if(rootDir[i].isDir)
+					printf("DIR--->%s\n",rootDir[i].name);
+				else
+					printf("FILE--->%s\n",rootDir[i].name);
+			
+		}
+		
+	}
+	
+	printf("\n");
+	return;
 }
