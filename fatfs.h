@@ -1,6 +1,8 @@
 #ifndef FATFS_H
 #define FATFS_H
 
+
+
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -11,10 +13,11 @@
 #include <stdio.h>
 
 
+//NAMED CONSTANTS
 
 #define DIR_ENTRY_COUNT 32
 #define BYTES_PER_SECTOR 512
-#define FATSIZE  8
+#define FATSIZE  2
 #define DATASIZE (BLOCKSNUMBER-FATSIZE-DIRTABLESIZE)
 #define BLOCKSNUMBER  256
 #define DIRTABLESIZE  (DIR_ENTRY_COUNT * sizeof(myEntry)+BYTES_PER_SECTOR-1)/BYTES_PER_SECTOR
@@ -23,7 +26,7 @@
 #define MAXNAME 11
 
 
-
+//FS DATA TYPES
 typedef  uint16_t myFAT;
 
 typedef uint8_t bool;
@@ -48,19 +51,28 @@ typedef struct {
 
 
 
-
+//FS GENERAL FUNCTIONS
 void initFS(char* diskname);
-void formatFS();
 void initRoot();
 void initEntry(int i);
 int findFreeFAT();
 int findFreeEntry();
+
+
+
+
+//FILE FUNCTIONS
 myFileHandle create_file(char* filename);
 int findFile(const char* filename);
 void erase_file(char* filename);
 size_t my_write(myFileHandle *fd,const char* buf,size_t count);
 size_t my_read(myFileHandle *fd, char* buf,size_t count);
 off_t my_seek(myFileHandle *fd, off_t offset, int whence);
+
+
+
+
+//DIRECTORY FUNCTIONS
 void create_dir(char* dirname);
 void erase_dir(char* dirname);
 void change_dir(char* dirname);
